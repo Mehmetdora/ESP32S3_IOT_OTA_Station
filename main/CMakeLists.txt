@@ -1,0 +1,32 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "common/http_client.cpp"
+        "common/device_id.cpp"
+        "wifi/wifi_manager.cpp"
+        "sensor/aht15.cpp"
+        "telemetry/telemetry.cpp"
+        "ota/ota_manager.cpp"
+    INCLUDE_DIRS
+        "."
+        "config"
+        "common"
+        "wifi"
+        "sensor"
+        "telemetry"
+        "ota"
+        "device"
+    REQUIRES
+        esp_wifi
+        esp_event
+        esp_netif
+        esp_http_client
+        esp-tls
+        app_update
+        esp_partition
+        nvs_flash
+        mbedtls
+        lwip
+        esp_driver_gpio
+        esp_driver_i2c
+)
