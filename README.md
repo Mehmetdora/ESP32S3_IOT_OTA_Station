@@ -1,53 +1,41 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 | ESP32-S31 | Linux |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- | --------- | ----- |
-
-# Hello World Example
-
-Starts a FreeRTOS task to print "Hello World".
-
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
-
-## How to use example
-
-Follow detailed instructions provided specifically for this example.
-
-Select the instructions depending on Espressif chip installed on your development board:
-
-- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
-- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
+# ESP32-S3 Weather Station + OTA [mehmetdora.me(Live here)](https://www.mehmetdora.me/)
 
 
-## Example folder contents
 
-The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
+An embedded project built on the ESP32-S3 (XIAO) with an AHT15 sensor. It measures temperature and humidity, sends the data over Wi-Fi to my own Laravel server via HTTPS, and can securely update its own firmware remotely. Written in C++ with ESP-IDF and FreeRTOS.
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
+## How It Works
 
-Below is short explanation of remaining files in the project folder.
+Three independent FreeRTOS tasks run on the device:
 
-```
-├── CMakeLists.txt
-├── pytest_hello_world.py      Python script used for automated testing
-├── main
-│   ├── CMakeLists.txt
-│   └── hello_world_main.c
-└── README.md                  This is the file you are currently reading
-```
+| Task | Responsibility |
+|---|---|
+| `sensor_task` | Reads the AHT15 every 10 seconds, adds a timestamp, and pushes the sample to a queue |
+| `telemetry_task` | Takes samples from the queue and sends them to the server over HTTPS |
+| `ota_task` | Handles update checks, firmware download, heartbeat, and rollback |
 
-For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
+A queue sits between the sensor and the network. Even if the network is slow or down, the sensor task never blocks, so the measurement loop stays intact.
 
-## Troubleshooting
+Before measuring, the device waits for a Wi-Fi connection and time synchronization, so every sample carries a valid timestamp. The time zone is set to UTC+3 and timestamps are sent to the server with a `+0300` offset.
 
-* Program upload failure
+## Features
 
-    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
-    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
+### Sensor
+- The AHT15 driver is written from scratch following the datasheet, using the ESP-IDF 5.x `i2c_master` API.
+- Measurement trigger, ready-status check, and conversion of raw data to temperature and humidity are all handled inside the driver.
 
-## Technical support and feedback
+### Telemetry
+- Temperature, humidity, and measurement time are sent to the server over HTTPS.
+- The timestamp is taken at measurement time, not at send time, so it stays accurate even if delivery is delayed.
 
-Please use the following feedback channels:
+### OTA Updates
+The device asks the server for updates by reporting its current version. If a newer version exists, the server returns the download URL and a SHA-256 hash.
 
-* For technical queries, go to the [esp32.com](https://esp32.com/) forum
-* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
+- **Secure transport:** Both the API and download URLs must use `https://`, and certificates are verified with the ESP-IDF certificate bundle. Redirects (up to 3) are checked one by one.
+- **Streaming download:** Firmware is downloaded in 4 KB chunks. Each chunk is written to flash and fed into the SHA-256 computation at the same time, so the whole image never has to fit in RAM.
+- **Integrity check:** If the hash does not match the one provided by the server, the boot partition is left unchanged and the device keeps running the old firmware.
+- **Automatic rollback:** A freshly updated firmware starts as unverified. It is confirmed once it communicates successfully with the server; if it fails to do so within 5 minutes, the device rolls back to the previous version.
+- **Loop protection:** The last attempted version is stored in NVS, so a bad version that was rolled back is not downloaded again and again.
 
-We will get back to you as soon as possible.
+### Device Monitoring
+- The device ID and the running firmware version are reported to the server regularly (heartbeat), so the server can see whether a device is online and which version it runs.
